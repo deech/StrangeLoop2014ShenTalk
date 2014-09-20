@@ -7,23 +7,16 @@
 
 * Shen
 ** Functions
-  - No arguments ...
+  - Defining Function ...
     #+BEGIN_SRC shen
-      (define hello -> (output "Hello world"))
-      (hello) => "Hello world"
-    #+END_SRC
-  - Single argument ...
-    #+BEGIN_SRC shen
-     (define hello
-       X -> (output "Hello ~A" X))
-     (hello "Strange Loop") => "Hello Strange Loop"
-    #+END_SRC
-  - Multiple Arguments
-    #+BEGIN_SRC shen
-    (define hello
-      X Y -> (output "Hello ~A and ~A" X Y))
-    (hello "Strange Loop" "Lambda Lounge")
-      => "Hello Strange Loop and Lambda Lounge"
+       (define welcome
+        X nil -> (output "Welcome to ~A" X)
+        X Y   -> (output "Welcome to ~A and ~A" X Y))
+       (welcome "Strange Loop" nil) =>
+            "Welcome to Strange Loop"
+       (welcome "Strange Loop" "St. Louis") =>
+            "Welcome to Strange Loop and St. Louis"
+
     #+END_SRC
 ** Typed Functions
    - Turn on typechecking, type signatures are required ...
@@ -522,6 +515,186 @@
     #+BEGIN_SRC
      (obj-macro [object (@p "auth" ...) ..])
     #+END_SRC
+   - And it works!
+     #+BEGIN_SRC shen
+       (object
+        ((kv (auth *
+         (object
+           ((kv (user * string))
+            (kv (pass * string))))))
+        ((kv (first * string))
+        ((kv (last * string))
+         (kv (phone * (list number)))))))
+     #+END_SRC
+** JSON Typing
+   - Further work:
+     - Equality?
+     - Subtyping?
+     - Row polymorphism?
+
+** JSON Typing
+   - Type level equality!
+     #+BEGIN_SRC shen
+       (datatype object-iterator
+         ...
+         let ListA (kv->list (shen.decons A))
+         let ListB (kv->list (shen.decons B))
+         if (and (= (length ListA) (length ListB))
+                 (same-keys-p ListA ListB))
+         ________________________________
+         X : (object B) >> Y : (object A);
+         )
+     #+END_SRC
+     #+BEGIN_SRC shen
+       (define same-keys-p
+         [] _ -> true
+         [X | XS] B -> (if (element? X B)
+                           (same-keys-p XS B)
+                           false))
+     #+END_SRC
+** JSON Typing
+   - Test it:
+     #+BEGIN_SRC shen
+       (define works?
+         { (object ((kv (key-a * number))
+                    (kv (key-b * number)))) -->
+           (object ((kv (key-b * number))
+                    (kv (key-a * number)))) }
+         X -> X)
+     #+END_SRC
+   - It works!
+     #+BEGIN_SRC 
+       (map (function register-key) [key-a key-b])
+       > (works? (make-object [object (@p "key-a" 1)
+                                      (@p "key-b" 1)]))
+       [object ..] : (object ((kv (key-b * number))
+                              (kv (key-a * number))))
+     #+END_SRC
+** Resources
+  - The Shen website - http://www.shenlanguage.org/
+  - The Book Of Shen - http://www.shenlanguage.org/tbos.html
+  - Shen Google Group - https://groups.google.com/group/qilang?hl=en
+** A Brief Interlude ...
+   - Type Error ...
+     #+BEGIN_SRC shen
+      (+ 1 "hello")
+       => type error
+     #+END_SRC
+   - Shen has a type level debugger!
+     #+BEGIN_SRC shen
+      (spy +)
+     #+END_SRC
+** A Brief Interlude
+   - A type debugging session ...
+
+     #+BEGIN_SRC shen
+
+      (+ 1 "hello") =>
+      ___________________________ 3 inferences
+      ?- ((+ 1) "hello") : Var2
+
+      __________________________ 12 inferences
+      ?- (+ 1) : (Var5 --> Var2)
+     #+END_SRC
+
+** A Brief Interlude
+   - Type debugging continued ...
+
+     #+BEGIN_SRC shen
+      ___________________________________17 inferences
+      ?- + : (Var7 --> (Var5 --> Var2))
+
+      ___________________________________20 inferences
+      ?- 1 : number
+
+      ___________________________________24 inferences
+      ?- "hello" : number
+
+      >
+      type error
+     #+END_SRC
+** Side Effecting Type Declarations
+   - Debug output in type declaration
+     #+BEGIN_SRC shen
+       (datatype positive-number
+
+          if (do (output "I'm here!") (is-positive X))
+          ___________________
+          X : positive-number;)
+     #+END_SRC
+** Interop
+   - Serializing/de-serializing
+     #+BEGIN_SRC shen
+       (define native-map->shen
+         _ N    -> N   where (isNumber N)
+         ...
+         Lang O ->
+            (let PairsOrEmpty (nativePairs O)
+               (if (absvector? PairsOrEmpty)
+                   (vector-map
+                      (/. X
+                        (with-snd
+                          (function (native-map->shen Lang))
+                          X))
+                      (nativePairs O))
+                   PairsOrEmpty))
+               where (isObject O)
+         _ Wut  -> (error "Unrecognized: ~A" Wut))
+     #+END_SRC
+** Interop
+   - Convert between Ruby/JSON to Shen
+     #+BEGIN_SRC shen
+       {:x => [1,2,3],
+        :y => {:ya => {},
+               :yb => nil     (@v
+              }            =>   (@p "x" [1 2 3])
+       }                        (@p "y" (@v
+       {x: [1,2 3],                       (@p "ya" (@v <>))
+        y: {ya: {},                       (@p "yb" nil))))
+            yb: null
+           }
+       }
+     #+END_SRC
+
+** Interop
+   - On the Ruby side...
+     #+BEGIN_SRC shen
+       class << shen
+         def isObject(x)
+           x.is_a?(Hash)
+         end
+       end
+     #+END_SRC
+   - On the JavaScript side ...
+     #+BEGIN_SRC shen
+       Shen.defun("isObject",1,function(args){
+         // Yes, I know this is buggy!
+         return typeof(args[0]) === "object";
+       });
+       Shen.defun("isObject",1,function(args){
+         return _.isObject(args[0]);
+       });
+     #+END_SRC
+** Interop
+   - Calling Shen from Ruby/JavaScript ...
+     #+BEGIN_SRC ruby
+       shen.send(              Shen.call_by_name(
+         "native-map->shen",     "native-map->shen", [
+         "rb",                    "js",
+          {:x => [1,2,3],         {x: [1,2 3],
+           :y => {:ya => {},       y: {ya: {},
+                  :yb => nil           yb: null
+                 }                    }
+          })                      }]);
+     #+END_SRC
+** Interop
+   - The FFI is *not* standardized
+   - This is good!
+   - Ports can do whatever they want
+     - Ruby coerces Arrays to Shen lists
+     - JavaScript does not, but has equality issues
+     - Cyclomatic complexity ensues
+   - Equal representation is hard and annoying!
 ** JSON Typing
    - Type check at run-time!
      #+BEGIN_SRC
@@ -539,128 +712,3 @@
        =>
        [object [kv [phone * [list number]]]]
      #+END_SRC
-** Resources
-  - The Shen website - http://www.shenlanguage.org/
-  - The Book Of Shen - http://www.shenlanguage.org/tbos.html
-  - Shen Google Group - https://groups.google.com/group/qilang?hl=en
-# ** A Brief Interlude ...
-#    - Type Error ...
-#      #+BEGIN_SRC shen
-#       (+ 1 "hello")
-#        => type error
-#      #+END_SRC
-#    - Shen has a type level debugger!
-#      #+BEGIN_SRC shen
-#       (spy +)
-#      #+END_SRC
-# ** A Brief Interlude
-#    - A type debugging session ...
-
-#      #+BEGIN_SRC shen
-
-#       (+ 1 "hello") =>
-#       ___________________________ 3 inferences
-#       ?- ((+ 1) "hello") : Var2
-
-#       __________________________ 12 inferences
-#       ?- (+ 1) : (Var5 --> Var2)
-#      #+END_SRC
-
-# ** A Brief Interlude
-#    - Type debugging continued ...
-
-#      #+BEGIN_SRC shen
-#       ___________________________________17 inferences
-#       ?- + : (Var7 --> (Var5 --> Var2))
-
-#       ___________________________________20 inferences
-#       ?- 1 : number
-
-#       ___________________________________24 inferences
-#       ?- "hello" : number
-
-#       >
-#       type error
-#      #+END_SRC
-# ** Side Effecting Type Declarations
-#    - Debug output in type declaration
-#      #+BEGIN_SRC shen
-#        (datatype positive-number
-
-#           if (do (output "I'm here!") (is-positive X))
-#           ___________________
-#           X : positive-number;)
-#      #+END_SRC
-# ** Interop
-#    - Serializing/de-serializing
-#      #+BEGIN_SRC shen
-#        (define native-map->shen
-#          _ N    -> N   where (isNumber N)
-#          ...
-#          Lang O ->
-#             (let PairsOrEmpty (nativePairs O)
-#                (if (absvector? PairsOrEmpty)
-#                    (vector-map
-#                       (/. X
-#                         (with-snd
-#                           (function (native-map->shen Lang))
-#                           X))
-#                       (nativePairs O))
-#                    PairsOrEmpty))
-#                where (isObject O)
-#          _ Wut  -> (error "Unrecognized: ~A" Wut))
-#      #+END_SRC
-# ** Interop
-#    - Convert between Ruby/JSON to Shen
-#      #+BEGIN_SRC shen
-#        {:x => [1,2,3],
-#         :y => {:ya => {},
-#                :yb => nil     (@v
-#               }            =>   (@p "x" [1 2 3])
-#        }                        (@p "y" (@v
-#        {x: [1,2 3],                       (@p "ya" (@v <>))
-#         y: {ya: {},                       (@p "yb" nil))))
-#             yb: null
-#            }
-#        }
-#      #+END_SRC
-
-# ** Interop
-#    - On the Ruby side...
-#      #+BEGIN_SRC shen
-#        class << shen
-#          def isObject(x)
-#            x.is_a?(Hash)
-#          end
-#        end
-#      #+END_SRC
-#    - On the JavaScript side ...
-#      #+BEGIN_SRC shen
-#        Shen.defun("isObject",1,function(args){
-#          // Yes, I know this is buggy!
-#          return typeof(args[0]) === "object";
-#        });
-#        Shen.defun("isObject",1,function(args){
-#          return _.isObject(args[0]);
-#        });
-#      #+END_SRC
-# ** Interop
-#    - Calling Shen from Ruby/JavaScript ...
-#      #+BEGIN_SRC ruby
-#        shen.send(              Shen.call_by_name(
-#          "native-map->shen",     "native-map->shen", [
-#          "rb",                    "js",
-#           {:x => [1,2,3],         {x: [1,2 3],
-#            :y => {:ya => {},       y: {ya: {},
-#                   :yb => nil           yb: null
-#                  }                    }
-#           })                      }]);
-#      #+END_SRC
-# ** Interop
-#    - The FFI is *not* standardized
-#    - This is good!
-#    - Ports can do whatever they want
-#      - Ruby coerces Arrays to Shen lists
-#      - JavaScript does not, but has equality issues
-#      - Cyclomatic complexity ensues
-#    - Equal representation is hard and annoying!
